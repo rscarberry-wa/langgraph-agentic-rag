@@ -2,6 +2,8 @@ from dotenv import load_dotenv
 
 from langgraph.graph import END, StateGraph
 
+from graph.chains.answer_grader import answer_grader
+from graph.chains.hallucination_grader import hallucination_grader
 from graph.consts import RETRIEVE, GRADE_DOCUMENTS, WEB_SEARCH, GENERATE
 from graph.nodes import *
 from graph.state import GraphState
@@ -17,6 +19,30 @@ def decide_to_generate(state: GraphState) -> str:
         print("  -- DECISION: ALL DOCUMENTS ARE RELEVANT, GENERATING")
         return GENERATE
 
+def grade_generation_grounded_in_documents_and_question(state: GraphState) -> str:
+    print("--- CHECK HALLUCINATIONS ---")
+    question = state["question"]
+    documents = state["documents"]
+    generation = state["generation"]
+    score =  hallucination_grader.invoke({
+        "documents": "\n\n".join(documents),
+        "generation": generation
+    })
+    if hallucination_grade := score.binary_score:
+        print("  --- DECISION: ANSWER IS GROUNDED IN DOCUMENTS ---")
+        print("  --- CHECK IF ANSWER IS RELEVANT ---")
+        score = answer_grader.invoke({
+            "question": question, "generation": generation
+        })
+        if answer_grade := score.binary_score:
+            print("    --- DECISION: ANSWER IS RELEVANT ---")
+            return "useful"
+        else:
+            print("    --- DECISION: ANSWER IS NOT RELEVANT, BACK TO WEB SEARCH ---")
+            return "not useful"
+    else:
+        return "not supported"
+
 workflow = StateGraph(state_schema=GraphState)
 
 workflow.add_node(RETRIEVE, retrieve)
@@ -28,7 +54,8 @@ workflow.set_entry_point(RETRIEVE)
 workflow.add_edge(RETRIEVE, GRADE_DOCUMENTS)
 workflow.add_conditional_edges(GRADE_DOCUMENTS, decide_to_generate, path_map={WEB_SEARCH: WEB_SEARCH, GENERATE: GENERATE})
 workflow.add_edge(WEB_SEARCH, GENERATE)
-workflow.add_edge(GENERATE, END)
+workflow.add_conditional_edges(GENERATE, grade_generation_grounded_in_documents_and_question,
+                               path_map={"useful": END, "not useful": WEB_SEARCH, "not supported": GENERATE})
 
 app = workflow.compile()
 
