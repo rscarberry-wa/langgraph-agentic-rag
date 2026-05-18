@@ -18,5 +18,5 @@ htmlcov/
 
 .secret/
 .credentials/
-
+.chroma/
 .idea/
