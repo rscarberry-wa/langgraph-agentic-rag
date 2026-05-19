@@ -1,5 +1,7 @@
 from dotenv import load_dotenv
 
+from graph.chains.router import question_router
+
 load_dotenv()
 
 from graph.chains.retrieval_grader import GradeDocuments, retrieval_grader
@@ -57,3 +59,13 @@ def test_answer_grader_answer_no() -> None:
     generation = "My favorite day of the week is Sunday."
     response = answer_grader.invoke({"question": question, "generation": generation})
     assert response.binary_score == False
+
+def test_router_to_vectorstore() -> None:
+    question = "What are some current Gen AI trends?"
+    response = question_router.invoke({"question": question})
+    assert response.datasource == "vectorstore"
+
+def test_router_to_web_search() -> None:
+    question = "What is the capital of France?"
+    response = question_router.invoke({"question": question})
+    assert response.datasource == "websearch"
